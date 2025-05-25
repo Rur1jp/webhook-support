@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Webhook ツール</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #5865F2;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        input[type="text"],
+        textarea {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #5865F2;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #4752C4;
+        }
+        #output {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e6e6fa;
+            border: 1px solid #dadafa;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: monospace;
+        }
+        .warning {
+            color: red;
+            font-weight: bold;
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Discord Webhook ツール (テスト用)</h1>
+        <p class="warning">
+            警告: このツールはDiscordのユーザー・トークンを使用します。
+            ユーザー・トークンは非常に機密性の高い情報であり、アカウントへの完全なアクセスを許可します。
+            このトークンを第三者に共有したり、信頼できないウェブサイトやアプリケーションで使用したりすることは絶対に避けてください。
+            また、Discordの利用規約では、ユーザー・トークンをプログラム的に使用することは禁止されています。
+            このコードはあくまで学習・テスト目的とし、公開したり、悪用したりしないでください。
+            自己責任でご使用ください。
+        </p>
+
+        <label for="userToken">Discord ユーザー・トークン:</label>
+        <input type="text" id="userToken" placeholder="ここにユーザー・トークンを入力してください">
+
+        <label for="guildId">サーバーID:</label>
+        <input type="text" id="guildId" placeholder="ここにサーバーIDを入力してください">
+
+        <label for="channelIds">チャンネルID (改行区切り):</label>
+        <textarea id="channelIds" rows="5" placeholder="チャンネルIDを改行区切りで入力してください"></textarea>
+
+        <button onclick="processWebhooks()">Webhook 処理を開始</button>
+
+        <h2>結果:</h2>
+        <div id="output">
+            ここに結果が表示されます。
+        </div>
+    </div>
+
+    <script>
+        async function processWebhooks() {
+            const userToken = document.getElementById('userToken').value.trim();
+            const guildId = document.getElementById('guildId').value.trim();
+            const channelIdsInput = document.getElementById('channelIds').value.trim();
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = ''; // 出力をクリア
+
+            if (!userToken || !guildId || !channelIdsInput) {
+                outputDiv.textContent = 'ユーザー・トークン、サーバーID、チャンネルIDを入力してください。';
+                return;
+            }
+
+            const channelIds = channelIdsInput.split('\n').map(id => id.trim()).filter(id => id !== '');
+
+            if (channelIds.length === 0) {
+                outputDiv.textContent = 'チャンネルIDを入力してください。';
+                return;
+            }
+
+            for (const channelId of channelIds) {
+                let webhookUrl = '';
+                let existingWebhook = null;
+
+                try {
+                    // 既存のWebhookを取得
+                    const webhooksResponse = await fetch(`https://discord.com/api/v9/channels/${channelId}/webhooks`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': userToken,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (webhooksResponse.ok) {
+                        const webhooks = await webhooksResponse.json();
+                        existingWebhook = webhooks.find(webhook => webhook.channel_id === channelId && webhook.guild_id === guildId);
+                    } else if (webhooksResponse.status === 403) {
+                        outputDiv.innerHTML += `チャンネル ${channelId}: Webhookの取得権限がありません。<br>`;
+                        continue;
+                    } else {
+                        outputDiv.innerHTML += `チャンネル ${channelId}: Webhookの取得に失敗しました (ステータス: ${webhooksResponse.status})<br>`;
+                    }
+
+                    if (existingWebhook) {
+                        webhookUrl = `https://discord.com/api/webhooks/${existingWebhook.id}/${existingWebhook.token}`;
+                        outputDiv.innerHTML += `チャンネル ${channelId} の既存Webhook: ${webhookUrl}<br>`;
+                    } else {
+                        // Webhookが存在しない場合、作成
+                        const createWebhookResponse = await fetch(`https://discord.com/api/v9/channels/${channelId}/webhooks`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': userToken,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                name: "Test Webhook (Created by tool)",
+                                avatar: null // 必要であればアバターのURLを設定
+                            })
+                        });
+
+                        if (createWebhookResponse.ok) {
+                            const newWebhook = await createWebhookResponse.json();
+                            webhookUrl = `https://discord.com/api/webhooks/${newWebhook.id}/${newWebhook.token}`;
+                            outputDiv.innerHTML += `チャンネル ${channelId} に新しいWebhookを作成しました: ${webhookUrl}<br>`;
+                        } else if (createWebhookResponse.status === 403) {
+                            outputDiv.innerHTML += `チャンネル ${channelId}: Webhookの作成権限がありません。<br>`;
+                        } else {
+                            outputDiv.innerHTML += `チャンネル ${channelId}: Webhookの作成に失敗しました (ステータス: ${createWebhookResponse.status})<br>`;
+                            const errorData = await createWebhookResponse.json();
+                            outputDiv.innerHTML += `エラー詳細: ${JSON.stringify(errorData)}<br>`;
+                        }
+                    }
+                } catch (error) {
+                    outputDiv.innerHTML += `チャンネル ${channelId} でエラーが発生しました: ${error.message}<br>`;
+                }
+                outputDiv.innerHTML += '<br>'; // 各チャンネルの間に改行を追加
+            }
+        }
+    </script>
+</body>
+</html>
