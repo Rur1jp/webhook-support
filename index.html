@@ -81,13 +81,13 @@
         <label for="userToken">とーくん:</label>
         <input type="text" id="userToken" placeholder="ここにユーザー・トークンを入力してください">
 
-        <label for="channelId">チャンネルID:</label>
-        <input type="text" id="channelId" placeholder="ここに単一のチャンネルIDを入力してください">
+        <label for="channelIds">チャンネルID (複数入力する場合はカンマ区切り):</label>
+        <input type="text" id="channelIds" placeholder="ここにチャンネルIDをカンマ区切りで入力してください (例: 12345,67890)">
 
         <label for="webhookName">Webhook 名 (任意):</label>
         <input type="text" id="webhookName" placeholder="Webhookの名前 (例: My Test Webhook)">
 
-        <label for="webhookCount">作成するWebhookの数:</label>
+        <label for="webhookCount">作成するWebhookの数 (各チャンネルごと):</label>
         <input type="number" id="webhookCount" value="1" min="1">
 
         <button onclick="createWebhooks()">Webhook 作成を開始</button>
@@ -107,8 +107,8 @@
     <script>
         async function createWebhooks() {
             const userToken = document.getElementById('userToken').value.trim();
-            const channelId = document.getElementById('channelId').value.trim();
-            const webhookName = document.getElementById('webhookName').value.trim() || 'Default Webhook Name'; // デフォルト名を設定
+            const channelIdsInput = document.getElementById('channelIds').value.trim();
+            const webhookName = document.getElementById('webhookName').value.trim() || 'Default Webhook Name';
             const webhookCount = parseInt(document.getElementById('webhookCount').value, 10);
             const outputLogDiv = document.getElementById('outputLog');
             const webhookUrlsOutputDiv = document.getElementById('webhookUrlsOutput');
@@ -117,7 +117,7 @@
             outputLogDiv.innerHTML = '';
             webhookUrlsOutputDiv.innerHTML = '';
 
-            if (!userToken || !channelId) {
+            if (!userToken || !channelIdsInput) {
                 outputLogDiv.textContent = 'ユーザー・トークンとチャンネルIDを入力してください。';
                 return;
             }
@@ -126,48 +126,60 @@
                 return;
             }
 
-            outputLogDiv.innerHTML += `チャンネル ${channelId} に ${webhookCount} 個のWebhookを作成します。<br><br>`;
+            const channelIds = channelIdsInput.split(',').map(id => id.trim()).filter(id => id);
 
-            const createdWebhookUrls = [];
-
-            for (let i = 0; i < webhookCount; i++) {
-                const currentWebhookName = webhookName === 'Default Webhook Name' ? `Test Webhook ${i + 1}` : `${webhookName} (${i + 1}/${webhookCount})`;
-
-                try {
-                    const createWebhookResponse = await fetch(`https://discord.com/api/v9/channels/${channelId}/webhooks`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': userToken,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            name: currentWebhookName,
-                            avatar: null // 必要であればアバターのURLを設定
-                        })
-                    });
-
-                    if (createWebhookResponse.ok) {
-                        const newWebhook = await createWebhookResponse.json();
-                        const webhookUrl = `https://discord.com/api/webhooks/${newWebhook.id}/${newWebhook.token}`;
-                        createdWebhookUrls.push(webhookUrl);
-                        outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **成功** - ${webhookUrl}<br>`;
-                    } else if (createWebhookResponse.status === 403) {
-                        outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **失敗** - Webhookの作成権限がありません。<br>`;
-                        const errorData = await createWebhookResponse.json();
-                        outputLogDiv.innerHTML += `エラー詳細: ${JSON.stringify(errorData)}<br>`;
-                    } else {
-                        outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **失敗** - Webhookの作成に失敗しました (ステータス: ${createWebhookResponse.status})<br>`;
-                        const errorData = await createWebhookResponse.json();
-                        outputLogDiv.innerHTML += `エラー詳細: ${JSON.stringify(errorData)}<br>`;
-                    }
-                } catch (error) {
-                    outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **エラー** - ${error.message}<br>`;
-                }
-                outputLogDiv.innerHTML += '<br>'; // 各Webhookの間に改行を追加
+            if (channelIds.length === 0) {
+                outputLogDiv.textContent = '有効なチャンネルIDを入力してください。';
+                return;
             }
 
-            if (createdWebhookUrls.length > 0) {
-                webhookUrlsOutputDiv.textContent = createdWebhookUrls.join('\n');
+            const allCreatedWebhookUrls = [];
+
+            for (const channelId of channelIds) {
+                outputLogDiv.innerHTML += `<h3>チャンネル ${channelId} のWebhookを作成中...</h3>`;
+                const createdWebhookUrlsForChannel = [];
+
+                for (let i = 0; i < webhookCount; i++) {
+                    const currentWebhookName = webhookName === 'Default Webhook Name' ? `Test Webhook ${i + 1}` : `${webhookName} (${i + 1}/${webhookCount})`;
+
+                    try {
+                        const createWebhookResponse = await fetch(`https://discord.com/api/v9/channels/${channelId}/webhooks`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': userToken,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                name: currentWebhookName,
+                                avatar: null
+                            })
+                        });
+
+                        if (createWebhookResponse.ok) {
+                            const newWebhook = await createWebhookResponse.json();
+                            const webhookUrl = `https://discord.com/api/webhooks/${newWebhook.id}/${newWebhook.token}`;
+                            allCreatedWebhookUrls.push(webhookUrl);
+                            createdWebhookUrlsForChannel.push(webhookUrl);
+                            outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **成功** - ${webhookUrl}<br>`;
+                        } else if (createWebhookResponse.status === 403) {
+                            outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **失敗** - Webhookの作成権限がありません。<br>`;
+                            const errorData = await createWebhookResponse.json();
+                            outputLogDiv.innerHTML += `エラー詳細: ${JSON.stringify(errorData)}<br>`;
+                        } else {
+                            outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **失敗** - Webhookの作成に失敗しました (ステータス: ${createWebhookResponse.status})<br>`;
+                            const errorData = await createWebhookResponse.json();
+                            outputLogDiv.innerHTML += `エラー詳細: ${JSON.stringify(errorData)}<br>`;
+                        }
+                    } catch (error) {
+                        outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **エラー** - ${error.message}<br>`;
+                    }
+                    outputLogDiv.innerHTML += '<br>';
+                }
+                outputLogDiv.innerHTML += `---<br>`; // チャンネル間の区切り
+            }
+
+            if (allCreatedWebhookUrls.length > 0) {
+                webhookUrlsOutputDiv.textContent = allCreatedWebhookUrls.join('\n');
             } else {
                 webhookUrlsOutputDiv.textContent = '作成されたWebhook URLはありません。';
             }
