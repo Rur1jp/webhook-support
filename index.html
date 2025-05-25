@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord Webhook ツール</title>
+    <title>Discord Webhook support</title>
     <style>
         body {
             font-family: sans-serif;
@@ -30,6 +30,7 @@
             font-weight: bold;
         }
         input[type="text"],
+        input[type="number"],
         textarea {
             width: calc(100% - 20px);
             padding: 10px;
@@ -47,11 +48,12 @@
             cursor: pointer;
             font-size: 16px;
             transition: background-color 0.3s ease;
+            margin-right: 10px; /* ボタン間のスペース */
         }
         button:hover {
             background-color: #4752C4;
         }
-        #output {
+        #outputLog, #webhookUrlsOutput {
             margin-top: 20px;
             padding: 15px;
             background-color: #e6e6fa;
@@ -60,6 +62,7 @@
             white-space: pre-wrap;
             word-wrap: break-word;
             font-family: monospace;
+            min-height: 50px; /* 最小の高さ */
         }
         .warning {
             color: red;
@@ -72,110 +75,107 @@
 <body>
     <div class="container">
         <h1>Discord Webhook ツール (テスト用)</h1>
-        <p class="warning">
-            警告: このツールはDiscordのユーザー・トークンを使用します。
-            ユーザー・トークンは非常に機密性の高い情報であり、アカウントへの完全なアクセスを許可します。
-            このトークンを第三者に共有したり、信頼できないウェブサイトやアプリケーションで使用したりすることは絶対に避けてください。
-            また、Discordの利用規約では、ユーザー・トークンをプログラム的に使用することは禁止されています。
-            このコードはあくまで学習・テスト目的とし、公開したり、悪用したりしないでください。
-            自己責任でご使用ください。
+  
         </p>
 
-        <label for="userToken">Discord ユーザー・トークン:</label>
+        <label for="userToken">とーくん:</label>
         <input type="text" id="userToken" placeholder="ここにユーザー・トークンを入力してください">
 
-        <label for="guildId">サーバーID:</label>
-        <input type="text" id="guildId" placeholder="ここにサーバーIDを入力してください">
+        <label for="channelId">チャンネルID:</label>
+        <input type="text" id="channelId" placeholder="ここに単一のチャンネルIDを入力してください">
 
-        <label for="channelIds">チャンネルID (改行区切り):</label>
-        <textarea id="channelIds" rows="5" placeholder="チャンネルIDを改行区切りで入力してください"></textarea>
+        <label for="webhookName">Webhook 名 (任意):</label>
+        <input type="text" id="webhookName" placeholder="Webhookの名前 (例: My Test Webhook)">
 
-        <button onclick="processWebhooks()">Webhook 処理を開始</button>
+        <label for="webhookCount">作成するWebhookの数:</label>
+        <input type="number" id="webhookCount" value="1" min="1">
 
-        <h2>結果:</h2>
-        <div id="output">
-            ここに結果が表示されます。
+        <button onclick="createWebhooks()">Webhook 作成を開始</button>
+        <button onclick="clearOutputs()">結果をクリア</button>
+
+        <h2>処理ログ:</h2>
+        <div id="outputLog">
+            ここに処理のログが表示されます。
+        </div>
+
+        <h2>作成されたWebhook URL:</h2>
+        <div id="webhookUrlsOutput">
+            ここに作成されたWebhook URLが改行区切りで表示されます。
         </div>
     </div>
 
     <script>
-        async function processWebhooks() {
+        async function createWebhooks() {
             const userToken = document.getElementById('userToken').value.trim();
-            const guildId = document.getElementById('guildId').value.trim();
-            const channelIdsInput = document.getElementById('channelIds').value.trim();
-            const outputDiv = document.getElementById('output');
-            outputDiv.innerHTML = ''; // 出力をクリア
+            const channelId = document.getElementById('channelId').value.trim();
+            const webhookName = document.getElementById('webhookName').value.trim() || 'Default Webhook Name'; // デフォルト名を設定
+            const webhookCount = parseInt(document.getElementById('webhookCount').value, 10);
+            const outputLogDiv = document.getElementById('outputLog');
+            const webhookUrlsOutputDiv = document.getElementById('webhookUrlsOutput');
 
-            if (!userToken || !guildId || !channelIdsInput) {
-                outputDiv.textContent = 'ユーザー・トークン、サーバーID、チャンネルIDを入力してください。';
+            // 出力をクリア
+            outputLogDiv.innerHTML = '';
+            webhookUrlsOutputDiv.innerHTML = '';
+
+            if (!userToken || !channelId) {
+                outputLogDiv.textContent = 'ユーザー・トークンとチャンネルIDを入力してください。';
+                return;
+            }
+            if (isNaN(webhookCount) || webhookCount < 1) {
+                outputLogDiv.textContent = '作成するWebhookの数は1以上の数字を入力してください。';
                 return;
             }
 
-            const channelIds = channelIdsInput.split('\n').map(id => id.trim()).filter(id => id !== '');
+            outputLogDiv.innerHTML += `チャンネル ${channelId} に ${webhookCount} 個のWebhookを作成します。<br><br>`;
 
-            if (channelIds.length === 0) {
-                outputDiv.textContent = 'チャンネルIDを入力してください。';
-                return;
-            }
+            const createdWebhookUrls = [];
 
-            for (const channelId of channelIds) {
-                let webhookUrl = '';
-                let existingWebhook = null;
+            for (let i = 0; i < webhookCount; i++) {
+                const currentWebhookName = webhookName === 'Default Webhook Name' ? `Test Webhook ${i + 1}` : `${webhookName} (${i + 1}/${webhookCount})`;
 
                 try {
-                    // 既存のWebhookを取得
-                    const webhooksResponse = await fetch(`https://discord.com/api/v9/channels/${channelId}/webhooks`, {
-                        method: 'GET',
+                    const createWebhookResponse = await fetch(`https://discord.com/api/v9/channels/${channelId}/webhooks`, {
+                        method: 'POST',
                         headers: {
                             'Authorization': userToken,
                             'Content-Type': 'application/json'
-                        }
+                        },
+                        body: JSON.stringify({
+                            name: currentWebhookName,
+                            avatar: null // 必要であればアバターのURLを設定
+                        })
                     });
 
-                    if (webhooksResponse.ok) {
-                        const webhooks = await webhooksResponse.json();
-                        existingWebhook = webhooks.find(webhook => webhook.channel_id === channelId && webhook.guild_id === guildId);
-                    } else if (webhooksResponse.status === 403) {
-                        outputDiv.innerHTML += `チャンネル ${channelId}: Webhookの取得権限がありません。<br>`;
-                        continue;
+                    if (createWebhookResponse.ok) {
+                        const newWebhook = await createWebhookResponse.json();
+                        const webhookUrl = `https://discord.com/api/webhooks/${newWebhook.id}/${newWebhook.token}`;
+                        createdWebhookUrls.push(webhookUrl);
+                        outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **成功** - ${webhookUrl}<br>`;
+                    } else if (createWebhookResponse.status === 403) {
+                        outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **失敗** - Webhookの作成権限がありません。<br>`;
+                        const errorData = await createWebhookResponse.json();
+                        outputLogDiv.innerHTML += `エラー詳細: ${JSON.stringify(errorData)}<br>`;
                     } else {
-                        outputDiv.innerHTML += `チャンネル ${channelId}: Webhookの取得に失敗しました (ステータス: ${webhooksResponse.status})<br>`;
-                    }
-
-                    if (existingWebhook) {
-                        webhookUrl = `https://discord.com/api/webhooks/${existingWebhook.id}/${existingWebhook.token}`;
-                        outputDiv.innerHTML += `チャンネル ${channelId} の既存Webhook: ${webhookUrl}<br>`;
-                    } else {
-                        // Webhookが存在しない場合、作成
-                        const createWebhookResponse = await fetch(`https://discord.com/api/v9/channels/${channelId}/webhooks`, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': userToken,
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                name: "Test Webhook (Created by tool)",
-                                avatar: null // 必要であればアバターのURLを設定
-                            })
-                        });
-
-                        if (createWebhookResponse.ok) {
-                            const newWebhook = await createWebhookResponse.json();
-                            webhookUrl = `https://discord.com/api/webhooks/${newWebhook.id}/${newWebhook.token}`;
-                            outputDiv.innerHTML += `チャンネル ${channelId} に新しいWebhookを作成しました: ${webhookUrl}<br>`;
-                        } else if (createWebhookResponse.status === 403) {
-                            outputDiv.innerHTML += `チャンネル ${channelId}: Webhookの作成権限がありません。<br>`;
-                        } else {
-                            outputDiv.innerHTML += `チャンネル ${channelId}: Webhookの作成に失敗しました (ステータス: ${createWebhookResponse.status})<br>`;
-                            const errorData = await createWebhookResponse.json();
-                            outputDiv.innerHTML += `エラー詳細: ${JSON.stringify(errorData)}<br>`;
-                        }
+                        outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **失敗** - Webhookの作成に失敗しました (ステータス: ${createWebhookResponse.status})<br>`;
+                        const errorData = await createWebhookResponse.json();
+                        outputLogDiv.innerHTML += `エラー詳細: ${JSON.stringify(errorData)}<br>`;
                     }
                 } catch (error) {
-                    outputDiv.innerHTML += `チャンネル ${channelId} でエラーが発生しました: ${error.message}<br>`;
+                    outputLogDiv.innerHTML += `Webhook ${i + 1}/${webhookCount} (${currentWebhookName}): **エラー** - ${error.message}<br>`;
                 }
-                outputDiv.innerHTML += '<br>'; // 各チャンネルの間に改行を追加
+                outputLogDiv.innerHTML += '<br>'; // 各Webhookの間に改行を追加
             }
+
+            if (createdWebhookUrls.length > 0) {
+                webhookUrlsOutputDiv.textContent = createdWebhookUrls.join('\n');
+            } else {
+                webhookUrlsOutputDiv.textContent = '作成されたWebhook URLはありません。';
+            }
+        }
+
+        function clearOutputs() {
+            document.getElementById('outputLog').innerHTML = 'ここに処理のログが表示されます。';
+            document.getElementById('webhookUrlsOutput').innerHTML = 'ここに作成されたWebhook URLが改行区切りで表示されます。';
         }
     </script>
 </body>
